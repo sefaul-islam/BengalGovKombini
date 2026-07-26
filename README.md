@@ -17,7 +17,7 @@ A Retrieval-Augmented Generation (RAG) conversational system designed for Bangla
                     │  app.py     │◀────────────┘
                     │ (Streamlit  │     ┌──────────────┐
                     │  Chat UI)   │────▶│ rag_engine.py│
-                    │             │     │ (Gemma LLM + │
+                    │             │     │ (Gemini LLM +│
                     └─────────────┘     │  Memory)     │
                                         └──────────────┘
 ```
@@ -27,7 +27,7 @@ A Retrieval-Augmented Generation (RAG) conversational system designed for Bangla
 | Web Crawler | BeautifulSoup + requests |
 | Embeddings | Google `text-embedding-004` |
 | Vector DB | ChromaDB (persistent) |
-| LLM | Gemma 3 (via Google AI Studio) |
+| LLM | Gemini 3.5 Flash (via Google AI Studio) |
 | Memory | LangChain ConversationBufferWindowMemory |
 | UI | Streamlit |
 | Deployment | Docker + Docker Compose |
@@ -95,6 +95,15 @@ docker-compose down
 
 ## 🖥️ Running Locally (Without Docker)
 
+You can use the provided `run.sh` script to quickly start or manage the application:
+```bash
+bash run.sh          # Start the Streamlit app
+bash run.sh crawl    # Re-crawl websites then ingest & start
+bash run.sh ingest   # Re-ingest data then start
+```
+
+Alternatively, you can run the steps manually:
+
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -151,7 +160,7 @@ Hackathon/
 | `CHUNK_OVERLAP` | `ingest.py` | 150 | Overlap between chunks |
 | `RETRIEVER_K` | `rag_engine.py` | 5 | Number of chunks retrieved |
 | `MEMORY_WINDOW_K` | `rag_engine.py` | 15 | Conversation turns remembered |
-| `LLM_MODEL` | `rag_engine.py` | `gemma-3-27b-it` | LLM model name |
+| `LLM_MODEL` | `rag_engine.py` | `gemini-3.5-flash` | LLM model name |
 | `LLM_TEMPERATURE` | `rag_engine.py` | 0.3 | Response creativity |
 
 ---
