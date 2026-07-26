@@ -1,0 +1,18 @@
+# Environments
+venv/
+env/
+.env
+
+# Cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Databases / Data
+chroma_db/
+scraped_data.json
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  # =========================================================================
+  # Main Streamlit Chat Application
+  # =========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: govbot-app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist ChromaDB embeddings across container restarts
+      - chroma_data:/app/chroma_db
+      # Persist scraped data
+      - scraped_data:/app/data
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================================================================
+  # One-shot: Crawl government websites
+  # Run with: docker-compose run --rm crawler
+  # =========================================================================
+  crawler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: govbot-crawler
+    volumes:
+      - scraped_data:/app/data
+    command: >
+      python crawler.py
+        --output /app/data/scraped_data.json
+        --depth 2
+    profiles:
+      - tools
+
+  # =========================================================================
+  # One-shot: Ingest scraped data into ChromaDB
+  # Run with: docker-compose run --rm ingest
+  # =========================================================================
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: govbot-ingest
+    volumes:
+      - chroma_data:/app/chroma_db
+      - scraped_data:/app/data
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    command: >
+      python ingest.py
+        --input /app/data/scraped_data.json
+        --chroma-dir /app/chroma_db
+        --collection gov_services_bd
+    profiles:
+      - tools
+
+volumes:
+  chroma_data:
+    driver: local
+  scraped_data:
+    driver: local
