@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHROMA_DIR = "./chroma_db"
 DEFAULT_COLLECTION = "gov_services_bd"
 EMBEDDING_MODEL = "models/gemini-embedding-001"
-LLM_MODEL = "gemini-3.5-flash"  # Gemini Flash via Google AI Studio
+LLM_MODEL = "gemini-3.7-flash"  # Gemini Flash via Google AI Studio
 LLM_TEMPERATURE = 0.3
-RETRIEVER_K = 5  # top-k chunks to retrieve
-MEMORY_WINDOW_K = 15  # remember last 15 conversation turns
+RETRIEVER_K = 3  # top-k chunks to retrieve
+MEMORY_WINDOW_K = 5  # remember last 5 conversation turns
 
 SYSTEM_PROMPT = """\
 You are a helpful, empathetic assistant for rural Bangladeshi citizens. \
@@ -129,7 +129,6 @@ class RAGChatEngine:
             model=llm_model,
             google_api_key=api_key,
             temperature=temperature,
-            convert_system_message_to_human=True,
         )
 
         # --- Memory ---
@@ -174,6 +173,55 @@ class RAGChatEngine:
         sources = result.get("source_documents", [])
         logger.info("Bot: %s", answer[:120])
         return {"answer": answer, "source_documents": sources}
+
+    def chat_stream(self, user_message: str):
+        """
+        Stream response tokens one-by-one. This bypasses the
+        ConversationalRetrievalChain (which makes 2 LLM calls) and instead
+        does a single retrieval + single LLM call with streaming.
+
+        Usage:
+            for token in engine.chat_stream("..."):
+                print(token, end="")
+            sources = engine.last_source_docs  # available after streaming ends
+        """
+        logger.info("User (stream): %s", user_message[:120])
+
+        # 1. Retrieve relevant documents
+        docs = self.retriever.invoke(user_message)
+        self.last_source_docs = docs
+        context = "\n\n".join(doc.page_content for doc in docs)
+
+        # 2. Format chat history from memory
+        history_messages = self.memory.load_memory_variables({}).get(
+            "chat_history", []
+        )
+        chat_history_str = ""
+        for msg in history_messages:
+            role = "User" if msg.type == "human" else "Assistant"
+            chat_history_str += f"{role}: {msg.content}\n"
+
+        # 3. Build prompt messages
+        messages = self.prompt.format_messages(
+            context=context,
+            chat_history=chat_history_str,
+            question=user_message,
+        )
+
+        # 4. Stream LLM response (single call)
+        full_response = ""
+        for chunk in self.llm.stream(messages):
+            token = chunk.content or ""
+            if token:
+                full_response += token
+                yield token
+
+        # 5. Save to memory after streaming completes
+        self.memory.save_context(
+            {"question": user_message},
+            {"answer": full_response},
+        )
+        logger.info("Bot (stream): %s", full_response[:120])
 
     def reset_memory(self) -> None:
         """Clear conversation memory for a fresh session."""

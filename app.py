@@ -101,6 +101,57 @@ st.markdown(
     /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+
+    /* Loading animation — Gemini-style */
+    .ai-loading {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 12px 0;
+    }
+
+    /* Pulsing sparkle icon */
+    .ai-loading-icon {
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        position: relative;
+    }
+    .ai-loading-icon svg {
+        width: 28px;
+        height: 28px;
+        animation: sparkle-pulse 2s ease-in-out infinite;
+    }
+    .ai-loading-icon svg path {
+        fill: url(#shimmer-grad);
+    }
+    @keyframes sparkle-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.7; }
+        50% { transform: scale(1.15); opacity: 1; }
+    }
+
+    /* Shimmer skeleton lines */
+    .ai-loading-lines {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-top: 4px;
+    }
+    .shimmer-line {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, #e8f0ec 25%, #c8e6d8 50%, #e8f0ec 75%);
+        background-size: 200% 100%;
+        animation: shimmer-move 1.5s ease-in-out infinite;
+    }
+    .shimmer-line:nth-child(1) { width: 85%; animation-delay: 0s; }
+    .shimmer-line:nth-child(2) { width: 70%; animation-delay: 0.15s; }
+    .shimmer-line:nth-child(3) { width: 55%; animation-delay: 0.3s; }
+    @keyframes shimmer-move {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -114,15 +165,6 @@ with st.sidebar:
         "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Flag_of_Bangladesh.svg/320px-Flag_of_Bangladesh.svg.png",
         width=180,
     )
-    st.markdown("### ⚙️ সেটিংস")
-
-    # Show API key status (loaded from .env)
-    if API_KEY:
-        st.success("✅ API Key লোড হয়েছে (.env থেকে)")
-    else:
-        st.error("❌ API Key পাওয়া যায়নি। .env ফাইলে GOOGLE_API_KEY সেট করুন।")
-
-    st.divider()
 
     st.markdown("### 📖 ব্যবহার নির্দেশিকা")
     st.markdown(
@@ -237,47 +279,81 @@ if prompt := st.chat_input("আপনার প্রশ্ন লিখুন..
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Generate response
+    # Generate response with streaming
     with st.chat_message("assistant", avatar="🤖"):
-        with st.spinner("🤔 উত্তর খুঁজছি..."):
-            try:
-                result = st.session_state.engine.chat(prompt)
-                answer = result["answer"]
-                source_docs = result.get("source_documents", [])
+        try:
+            # Show Gemini-style loading animation while retrieving
+            typing_placeholder = st.empty()
+            typing_placeholder.markdown(
+                '<div class="ai-loading">'
+                '  <div class="ai-loading-icon">'
+                '    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+                '      <defs>'
+                '        <linearGradient id="shimmer-grad" x1="0%" y1="0%" x2="100%" y2="100%">'
+                '          <stop offset="0%" style="stop-color:#006a4e"/>'
+                '          <stop offset="50%" style="stop-color:#00a878"/>'
+                '          <stop offset="100%" style="stop-color:#006a4e"/>'
+                '        </linearGradient>'
+                '      </defs>'
+                '      <path d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20L12 16.9L7.09 20L8.45 13.97L4 9.27L9.91 8.26L12 2Z"/>'
+                '    </svg>'
+                '  </div>'
+                '  <div class="ai-loading-lines">'
+                '    <div class="shimmer-line"></div>'
+                '    <div class="shimmer-line"></div>'
+                '    <div class="shimmer-line"></div>'
+                '  </div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
-                # Extract unique source URLs
-                source_urls = []
-                seen = set()
-                for doc in source_docs:
-                    url = doc.metadata.get("source_url", "")
-                    if url and url not in seen:
-                        seen.add(url)
-                        source_urls.append(url)
+            raw_stream = st.session_state.engine.chat_stream(prompt)
 
-                st.markdown(answer)
+            # Wrap stream so animation stays visible until first token arrives
+            def stream_with_loading():
+                first_token = True
+                for token in raw_stream:
+                    if first_token:
+                        typing_placeholder.empty()
+                        first_token = False
+                    yield token
+                if first_token:  # no tokens were yielded
+                    typing_placeholder.empty()
 
-                # Display source citations
-                if source_urls:
-                    sources_html = "<div class='source-citation'>📎 <strong>তথ্যসূত্র:</strong><br>"
-                    for src_url in source_urls:
-                        sources_html += (
-                            f"• <a href='{src_url}' target='_blank'>{src_url}</a><br>"
-                        )
-                    sources_html += "</div>"
-                    st.markdown(sources_html, unsafe_allow_html=True)
+            answer = st.write_stream(stream_with_loading())
 
-                # Save to session state
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": answer,
-                        "sources": source_urls,
-                    }
-                )
+            # Extract source URLs (available after stream completes)
+            source_docs = getattr(st.session_state.engine, "last_source_docs", [])
+            source_urls = []
+            seen = set()
+            for doc in source_docs:
+                url = doc.metadata.get("source_url", "")
+                if url and url not in seen:
+                    seen.add(url)
+                    source_urls.append(url)
 
-            except Exception as exc:
-                error_msg = f"দুঃখিত, একটি সমস্যা হয়েছে: {exc}"
-                st.error(error_msg)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": error_msg, "sources": []}
-                )
+            # Display source citations
+            if source_urls:
+                sources_html = "<div class='source-citation'>📎 <strong>তথ্যসূত্র:</strong><br>"
+                for src_url in source_urls:
+                    sources_html += (
+                        f"• <a href='{src_url}' target='_blank'>{src_url}</a><br>"
+                    )
+                sources_html += "</div>"
+                st.markdown(sources_html, unsafe_allow_html=True)
+
+            # Save to session state
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": source_urls,
+                }
+            )
+
+        except Exception as exc:
+            error_msg = f"দুঃখিত, একটি সমস্যা হয়েছে: {exc}"
+            st.error(error_msg)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": error_msg, "sources": []}
+            )
