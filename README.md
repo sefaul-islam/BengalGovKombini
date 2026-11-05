@@ -45,7 +45,7 @@ A Retrieval-Augmented Generation (RAG) conversational system designed for Bangla
 
 ```bash
 git clone <your-repo-url>
-cd Hackathon
+cd BengalGovKombini
 
 # Set your API key
 export GOOGLE_API_KEY="your-api-key-here"
